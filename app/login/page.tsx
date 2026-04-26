@@ -1,31 +1,24 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useRef, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { Sparkles, Loader2, MapPin, CheckCircle2 } from "lucide-react"
+import { ArrowLeft, Phone, Shield, Sparkles, Loader2, MapPin, CheckCircle2 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { autoDetectLocation, getSavedLocation, type UserLocation } from "@/lib/location"
 import { useUser } from "@/contexts/UserContext"
 
-// Google Icon Component
-function GoogleIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-    </svg>
-  )
-}
-
 export default function LoginPage() {
   const router = useRouter()
-  const { signInWithGoogle, isAuthenticated, isLoading: isAuthLoading } = useUser()
+  const { login, verifyOTP, isAuthenticated, isLoading: isAuthLoading, currentLocation, isLocationTracking, startLocationTracking } = useUser()
+  const [step, setStep] = useState<"phone" | "otp">("phone")
+  const [phoneNumber, setPhoneNumber] = useState("")
+  const [otp, setOtp] = useState(["", "", "", "", "", ""])
   const [isLoading, setIsLoading] = useState(false)
+  const [countdown, setCountdown] = useState(0)
   const [userLocation, setUserLocation] = useState<UserLocation | null>(null)
   const [locationStatus, setLocationStatus] = useState<"detecting" | "success" | "error" | "idle">("idle")
+  const otpRefs = useRef<(HTMLInputElement | null)[]>([])
 
   // Redirect if already authenticated
   useEffect(() => {
@@ -36,6 +29,7 @@ export default function LoginPage() {
 
   // Auto-detect location on mount (silently in background)
   useEffect(() => {
+    // Check if we already have a saved location
     const savedLocation = getSavedLocation()
     if (savedLocation) {
       setUserLocation(savedLocation)
@@ -43,6 +37,7 @@ export default function LoginPage() {
       return
     }
 
+    // Auto-detect location
     setLocationStatus("detecting")
     autoDetectLocation()
       .then((location) => {
@@ -54,26 +49,74 @@ export default function LoginPage() {
       })
   }, [])
 
-  const handleGoogleSignIn = async () => {
-    setIsLoading(true)
-    try {
-      await signInWithGoogle()
-    } catch (error) {
-      console.error("Google sign-in error:", error)
+  useEffect(() => {
+    if (countdown > 0) {
+      const timer = setTimeout(() => setCountdown(countdown - 1), 1000)
+      return () => clearTimeout(timer)
+    }
+  }, [countdown])
+
+  const handleSendOtp = async () => {
+    if (phoneNumber.length >= 10) {
+      setIsLoading(true)
+      // Simulate OTP send
+      await new Promise(resolve => setTimeout(resolve, 1500))
       setIsLoading(false)
+      setStep("otp")
+      setCountdown(30)
     }
   }
 
-  // Show loading while checking auth
-  if (isAuthLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="text-center">
-          <Loader2 className="mx-auto h-8 w-8 animate-spin text-[#d4af37]" />
-          <p className="mt-4 text-muted-foreground">Loading...</p>
-        </div>
-      </div>
-    )
+  const handleOtpChange = (index: number, value: string) => {
+    if (value.length > 1) return
+    
+    const newOtp = [...otp]
+    newOtp[index] = value
+    setOtp(newOtp)
+
+    // Auto-focus next input
+    if (value && index < 5) {
+      otpRefs.current[index + 1]?.focus()
+    }
+  }
+
+  const handleOtpKeyDown = (index: number, e: React.KeyboardEvent) => {
+    if (e.key === "Backspace" && !otp[index] && index > 0) {
+      otpRefs.current[index - 1]?.focus()
+    }
+  }
+
+  const handleVerifyOtp = async () => {
+    const otpValue = otp.join("")
+    if (otpValue.length === 6) {
+      setIsLoading(true)
+      
+      // First, store the phone number for the name page
+      localStorage.setItem("terraloop_phone", phoneNumber)
+      
+      // Simulate OTP verification delay
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      
+      // Verify OTP using context (this also starts location tracking)
+      const tempName = "User" // Temporary name, will be updated on name page
+      login(phoneNumber, tempName)
+      const success = await verifyOTP(otpValue)
+      
+      setIsLoading(false)
+      
+      if (success) {
+        // Start location tracking immediately
+        startLocationTracking()
+        router.push("/name")
+      }
+    }
+  }
+
+  const handleResendOtp = () => {
+    if (countdown === 0) {
+      setCountdown(30)
+      // Simulate resend
+    }
   }
 
   return (
@@ -82,6 +125,14 @@ export default function LoginPage() {
       <div className="absolute right-4 top-4 z-50">
         <ThemeToggle />
       </div>
+
+      {/* Back Button */}
+      <button
+        onClick={() => step === "otp" ? setStep("phone") : router.push("/language")}
+        className="absolute left-4 top-4 z-50 flex h-10 w-10 items-center justify-center rounded-full border border-[#d4af37]/30 bg-card/50 backdrop-blur-sm transition-all hover:border-[#d4af37] hover:bg-card"
+      >
+        <ArrowLeft className="h-5 w-5 text-[#d4af37]" />
+      </button>
 
       {/* Location Status Indicator */}
       <div className="absolute left-4 bottom-4 z-50">
@@ -121,81 +172,155 @@ export default function LoginPage() {
         <div className="absolute -bottom-40 -left-40 h-80 w-80 rounded-full bg-[#d4af37]/10 blur-3xl" />
       </div>
 
-      <div className="relative mx-auto flex min-h-screen max-w-md flex-col items-center justify-center px-4">
-        {/* Logo and Title */}
-        <div className="mb-10 text-center">
-          <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full border-2 border-[#d4af37] bg-gradient-to-br from-[#d4af37]/20 to-[#b8962f]/20 shadow-lg">
-            <Sparkles className="h-10 w-10 text-[#d4af37]" />
-          </div>
-          <h1 
-            className="mb-2 text-4xl font-bold text-magical"
-            style={{ fontFamily: 'Cinzel, serif' }}
-          >
-            Terraloop
-          </h1>
-          <p 
-            className="text-muted-foreground"
-            style={{ fontFamily: 'Lora, serif' }}
-          >
-            Fresh produce, locally sourced
-          </p>
-        </div>
+      <div className="relative mx-auto max-w-md px-4 py-20">
+        {step === "phone" ? (
+          <>
+            {/* Phone Number Step */}
+            <div className="mb-10 text-center">
+              <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full border-2 border-[#d4af37] bg-card shadow-lg">
+                <Phone className="h-8 w-8 text-[#d4af37]" />
+              </div>
+              <h1 
+                className="mb-2 text-3xl font-bold text-magical"
+                style={{ fontFamily: 'Cinzel, serif' }}
+              >
+                Enter Your Number
+              </h1>
+              <p 
+                className="text-muted-foreground"
+                style={{ fontFamily: 'Lora, serif' }}
+              >
+                We&apos;ll send you a magical verification code
+              </p>
+            </div>
 
-        {/* Login Card */}
-        <Card className="card-magical w-full">
-          <CardContent className="p-6">
-            <h2 
-              className="mb-6 text-center text-xl font-semibold text-foreground"
-              style={{ fontFamily: 'Cinzel, serif' }}
-            >
-              Sign in to continue
-            </h2>
+            <Card className="card-magical mb-6">
+              <CardContent className="p-6">
+                <label 
+                  className="mb-2 block text-sm font-medium text-foreground"
+                  style={{ fontFamily: 'Cinzel, serif' }}
+                >
+                  Phone Number
+                </label>
+                <div className="flex items-center gap-3">
+                  <div className="flex h-14 items-center justify-center rounded-lg border border-border bg-secondary px-4">
+                    <span className="text-lg font-medium text-foreground">+91</span>
+                  </div>
+                  <input
+                    type="tel"
+                    value={phoneNumber}
+                    onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                    placeholder="9876543210"
+                    className="h-14 flex-1 rounded-lg border border-border bg-input px-4 text-lg font-medium text-foreground placeholder:text-muted-foreground focus:border-[#d4af37] focus:outline-none focus:ring-2 focus:ring-[#d4af37]/20"
+                    style={{ fontFamily: 'Lora, serif' }}
+                  />
+                </div>
+              </CardContent>
+            </Card>
 
-            {/* Google Sign In Button */}
             <button
-              onClick={handleGoogleSignIn}
-              disabled={isLoading}
-              className="group relative flex w-full items-center justify-center gap-3 overflow-hidden rounded-full border-2 border-border bg-card py-4 text-lg font-semibold text-foreground transition-all duration-300 hover:border-[#d4af37] hover:bg-card/80 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={handleSendOtp}
+              disabled={phoneNumber.length < 10 || isLoading}
+              className={`group relative w-full overflow-hidden rounded-full border-2 py-4 text-lg font-semibold transition-all duration-300 ${
+                phoneNumber.length >= 10 && !isLoading
+                  ? 'border-[#d4af37] bg-gradient-to-r from-[#d4af37] to-[#b8962f] text-background hover:shadow-[0_0_30px_rgba(212,175,55,0.5)]'
+                  : 'border-border bg-secondary text-muted-foreground cursor-not-allowed'
+              }`}
               style={{ fontFamily: 'Cinzel, serif' }}
             >
               {isLoading ? (
-                <Loader2 className="h-6 w-6 animate-spin" />
+                <Loader2 className="mx-auto h-6 w-6 animate-spin" />
               ) : (
-                <>
-                  <GoogleIcon className="h-6 w-6" />
-                  <span>Continue with Google</span>
-                </>
+                <span className="relative z-10 flex items-center justify-center gap-2">
+                  Send Verification Code
+                  <Sparkles className="h-5 w-5" />
+                </span>
               )}
             </button>
-
-            {/* Divider */}
-            <div className="my-6 flex items-center gap-4">
-              <div className="h-px flex-1 bg-border" />
-              <span className="text-sm text-muted-foreground">or</span>
-              <div className="h-px flex-1 bg-border" />
+          </>
+        ) : (
+          <>
+            {/* OTP Step */}
+            <div className="mb-10 text-center">
+              <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full border-2 border-[#d4af37] bg-card shadow-lg">
+                <Shield className="h-8 w-8 text-[#d4af37]" />
+              </div>
+              <h1 
+                className="mb-2 text-3xl font-bold text-magical"
+                style={{ fontFamily: 'Cinzel, serif' }}
+              >
+                Verify OTP
+              </h1>
+              <p 
+                className="text-muted-foreground"
+                style={{ fontFamily: 'Lora, serif' }}
+              >
+                Enter the 6-digit code sent to +91 {phoneNumber}
+              </p>
             </div>
 
-            {/* Info Text */}
-            <p className="text-center text-sm text-muted-foreground" style={{ fontFamily: 'Lora, serif' }}>
-              By signing in, you agree to our Terms of Service and Privacy Policy
-            </p>
-          </CardContent>
-        </Card>
+            <Card className="card-magical mb-6">
+              <CardContent className="p-6">
+                <div className="flex justify-center gap-3">
+                  {otp.map((digit, index) => (
+                    <input
+                      key={index}
+                      ref={(el) => { otpRefs.current[index] = el }}
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={1}
+                      value={digit}
+                      onChange={(e) => handleOtpChange(index, e.target.value)}
+                      onKeyDown={(e) => handleOtpKeyDown(index, e)}
+                      className="h-14 w-12 rounded-lg border border-border bg-input text-center text-2xl font-bold text-foreground focus:border-[#d4af37] focus:outline-none focus:ring-2 focus:ring-[#d4af37]/20"
+                    />
+                  ))}
+                </div>
 
-        {/* Features */}
-        <div className="mt-8 grid grid-cols-3 gap-4 text-center">
-          <div className="rounded-lg border border-border/50 bg-card/50 p-3 backdrop-blur-sm">
-            <div className="mb-1 text-lg font-bold text-[#d4af37]">2.5km</div>
-            <div className="text-xs text-muted-foreground">Local Range</div>
-          </div>
-          <div className="rounded-lg border border-border/50 bg-card/50 p-3 backdrop-blur-sm">
-            <div className="mb-1 text-lg font-bold text-[#d4af37]">Fresh</div>
-            <div className="text-xs text-muted-foreground">Produce</div>
-          </div>
-          <div className="rounded-lg border border-border/50 bg-card/50 p-3 backdrop-blur-sm">
-            <div className="mb-1 text-lg font-bold text-[#d4af37]">Live</div>
-            <div className="text-xs text-muted-foreground">Tracking</div>
-          </div>
+                <div className="mt-6 text-center">
+                  {countdown > 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      Resend code in <span className="font-semibold text-[#d4af37]">{countdown}s</span>
+                    </p>
+                  ) : (
+                    <button
+                      onClick={handleResendOtp}
+                      className="text-sm font-medium text-[#d4af37] hover:underline"
+                    >
+                      Resend Code
+                    </button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            <button
+              onClick={handleVerifyOtp}
+              disabled={otp.join("").length < 6 || isLoading}
+              className={`group relative w-full overflow-hidden rounded-full border-2 py-4 text-lg font-semibold transition-all duration-300 ${
+                otp.join("").length === 6 && !isLoading
+                  ? 'border-[#d4af37] bg-gradient-to-r from-[#d4af37] to-[#b8962f] text-background hover:shadow-[0_0_30px_rgba(212,175,55,0.5)]'
+                  : 'border-border bg-secondary text-muted-foreground cursor-not-allowed'
+              }`}
+              style={{ fontFamily: 'Cinzel, serif' }}
+            >
+              {isLoading ? (
+                <Loader2 className="mx-auto h-6 w-6 animate-spin" />
+              ) : (
+                <span className="relative z-10 flex items-center justify-center gap-2">
+                  Verify & Continue
+                  <Sparkles className="h-5 w-5" />
+                </span>
+              )}
+            </button>
+          </>
+        )}
+
+        {/* Step indicator */}
+        <div className="mt-8 flex items-center justify-center gap-2">
+          <div className="h-2 w-8 rounded-full bg-[#d4af37]" />
+          <div className="h-2 w-8 rounded-full bg-[#d4af37]" />
+          <div className="h-2 w-8 rounded-full bg-border" />
         </div>
       </div>
     </div>

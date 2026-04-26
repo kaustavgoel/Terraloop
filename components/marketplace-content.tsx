@@ -50,7 +50,6 @@ import {
   type PurchaseOrder
 } from "@/lib/store"
 import { useMarketplaceListings } from "@/hooks/useGeofencedListings"
-import { ListingCardSkeleton, LocationBannerSkeleton, NoListingsFound } from "@/components/marketplace-skeleton"
 
 interface MarketplaceContentProps {
   initialCategory: "climacteric" | "non-climacteric" | null
@@ -873,17 +872,7 @@ export function MarketplaceContent({ initialCategory }: MarketplaceContentProps)
         
         {/* Fruit Grid */}
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {/* Show skeletons while loading */}
-          {isGeofenceLoading && filteredItems.length === 0 && (
-            <>
-              {Array.from({ length: 8 }).map((_, i) => (
-                <ListingCardSkeleton key={`skeleton-${i}`} />
-              ))}
-            </>
-          )}
-          
-          {/* Show actual listings */}
-          {!isGeofenceLoading && filteredItems.map((item) => (
+          {filteredItems.map((item) => (
             <FruitCard 
               key={item.id} 
               item={item} 
@@ -893,9 +882,12 @@ export function MarketplaceContent({ initialCategory }: MarketplaceContentProps)
           ))}
         </div>
         
-        {/* Empty state - no listings found */}
-        {!isGeofenceLoading && filteredItems.length === 0 && (
-          <NoListingsFound radius={2.5} />
+        {filteredItems.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <Sparkles className="mb-4 h-12 w-12 text-muted-foreground/40" />
+            <p className="text-lg font-medium text-muted-foreground">No fruits found</p>
+            <p className="text-sm text-muted-foreground/70">Try selecting a different category</p>
+          </div>
         )}
       </div>
       

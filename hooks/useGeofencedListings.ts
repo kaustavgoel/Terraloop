@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { getSavedLocation, saveUserLocation } from "@/lib/location"
-import { seedNearbyListings } from "@/lib/listing-service"
 
 // Listing type from database
 export interface GeoListing {
@@ -114,27 +113,7 @@ export function useGeofencedListings(
           throw new Error(rpcError.message)
         }
 
-        // If no listings found nearby, seed some dummy listings
-        if (!data || data.length === 0) {
-          const seeded = await seedNearbyListings(lat, lng)
-          if (seeded) {
-            // Refetch after seeding
-            const { data: newData } = await supabase.current.rpc(
-              "get_nearby_listings",
-              {
-                user_lat: lat,
-                user_lng: lng,
-                radius_km: radiusKm,
-              }
-            )
-            setListings(newData || [])
-          } else {
-            setListings([])
-          }
-        } else {
-          setListings(data)
-        }
-        
+        setListings(data || [])
         lastFetchLocation.current = { lat, lng }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to fetch listings")

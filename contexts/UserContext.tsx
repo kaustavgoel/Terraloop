@@ -1,26 +1,37 @@
 "use client"
 
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react"
-import { createClient } from "@/lib/supabase/client"
 import { getSavedLocation, saveUserLocation, clearUserLocation, type UserLocation } from "@/lib/location"
-import type { User, Session } from "@supabase/supabase-js"
 
-// User profile interface (extended from Supabase user)
+// Session storage key
+const SESSION_KEY = "terraloop_session"
+const USER_KEY = "terraloop_user"
+
+// User profile interface
 export interface UserProfile {
-  id: string
-  email: string | null
+  phone: string
   name: string
-  avatar?: string
   role: "grocer" | "buyer" | null
-  phone?: string
+  isVerified: boolean
+  verifiedAt?: number
+}
+
+// Session interface
+export interface UserSession {
+  userId: string
+  phone: string
+  name: string
+  role: "grocer" | "buyer" | null
+  isVerified: boolean
+  createdAt: number
+  expiresAt: number
 }
 
 // Context state interface
 interface UserContextState {
   // Auth state
   user: UserProfile | null
-  supabaseUser: User | null
-  session: Session | null
+  session: UserSession | null
   isAuthenticated: boolean
   isLoading: boolean
   
@@ -30,127 +41,102 @@ interface UserContextState {
   locationError: string | null
   
   // Auth actions
-  signInWithGoogle: () => Promise<void>
-  signOut: () => Promise<void>
-  updateProfile: (data: Partial<UserProfile>) => void
+  login: (phone: string, name: string) => void
+  verifyOTP: (otp: string) => Promise<boolean>
   setRole: (role: "grocer" | "buyer") => void
+  logout: () => void
   
   // Location actions
   startLocationTracking: () => void
   stopLocationTracking: () => void
   
-  // Geofencing config
+  // Geofencing config (easily adjustable)
   GEOFENCE_RADIUS_KM: number
 }
 
 // Default values
 const defaultContext: UserContextState = {
   user: null,
-  supabaseUser: null,
   session: null,
   isAuthenticated: false,
   isLoading: true,
   currentLocation: null,
   isLocationTracking: false,
   locationError: null,
-  signInWithGoogle: async () => {},
-  signOut: async () => {},
-  updateProfile: () => {},
+  login: () => {},
+  verifyOTP: async () => false,
   setRole: () => {},
+  logout: () => {},
   startLocationTracking: () => {},
   stopLocationTracking: () => {},
-  GEOFENCE_RADIUS_KM: 2.5,
+  GEOFENCE_RADIUS_KM: 2.5, // Default 2.5km radius - easily adjustable
 }
 
 // Create context
 const UserContext = createContext<UserContextState>(defaultContext)
 
-// Geofence radius
+// Geofence radius - easily adjustable
 const GEOFENCE_RADIUS_KM = 2.5
 
-// Local storage keys for profile data
-const PROFILE_KEY = "terraloop_profile"
+// Session duration (7 days in milliseconds)
+const SESSION_DURATION = 7 * 24 * 60 * 60 * 1000
 
 export function UserProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null)
-  const [supabaseUser, setSupabaseUser] = useState<User | null>(null)
-  const [session, setSession] = useState<Session | null>(null)
+  const [session, setSession] = useState<UserSession | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [currentLocation, setCurrentLocation] = useState<UserLocation | null>(null)
   const [isLocationTracking, setIsLocationTracking] = useState(false)
   const [locationError, setLocationError] = useState<string | null>(null)
   const [watchId, setWatchId] = useState<number | null>(null)
 
-  const supabase = createClient()
-
-  // Convert Supabase user to UserProfile
-  const createProfileFromUser = useCallback((supaUser: User): UserProfile => {
-    // Try to get saved profile data
-    const savedProfile = localStorage.getItem(PROFILE_KEY)
-    const parsedProfile = savedProfile ? JSON.parse(savedProfile) : {}
-    
-    return {
-      id: supaUser.id,
-      email: supaUser.email ?? null,
-      name: parsedProfile.name || supaUser.user_metadata?.full_name || supaUser.user_metadata?.name || supaUser.email?.split('@')[0] || 'User',
-      avatar: supaUser.user_metadata?.avatar_url || supaUser.user_metadata?.picture,
-      role: parsedProfile.role || null,
-      phone: parsedProfile.phone,
-    }
-  }, [])
-
-  // Initialize auth state
+  // Check for existing session on mount
   useEffect(() => {
-    const initAuth = async () => {
+    const rehydrateSession = () => {
       try {
-        // Get initial session
-        const { data: { session: initialSession } } = await supabase.auth.getSession()
+        const storedSession = localStorage.getItem(SESSION_KEY)
+        const storedUser = localStorage.getItem(USER_KEY)
         
-        if (initialSession?.user) {
-          setSession(initialSession)
-          setSupabaseUser(initialSession.user)
-          setUser(createProfileFromUser(initialSession.user))
+        if (storedSession && storedUser) {
+          const parsedSession: UserSession = JSON.parse(storedSession)
+          const parsedUser: UserProfile = JSON.parse(storedUser)
           
-          // Load saved location
-          const savedLocation = getSavedLocation()
-          if (savedLocation) {
-            setCurrentLocation(savedLocation)
+          // Check if session is still valid
+          if (parsedSession.expiresAt > Date.now()) {
+            setSession(parsedSession)
+            setUser(parsedUser)
+            
+            // Auto-start location tracking if verified
+            if (parsedUser.isVerified) {
+              const savedLocation = getSavedLocation()
+              if (savedLocation) {
+                setCurrentLocation(savedLocation)
+              }
+              // Start tracking for real-time updates
+              startLocationTrackingInternal()
+            }
+          } else {
+            // Session expired, clear it
+            clearSession()
           }
         }
       } catch (error) {
-        console.error("Error initializing auth:", error)
+        console.error("Error rehydrating session:", error)
+        clearSession()
       } finally {
         setIsLoading(false)
       }
     }
 
-    initAuth()
+    rehydrateSession()
+    
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, newSession) => {
-        if (newSession?.user) {
-          setSession(newSession)
-          setSupabaseUser(newSession.user)
-          setUser(createProfileFromUser(newSession.user))
-        } else {
-          setSession(null)
-          setSupabaseUser(null)
-          setUser(null)
-        }
-        setIsLoading(false)
-      }
-    )
-
-    return () => {
-      subscription.unsubscribe()
-    }
-  }, [supabase.auth, createProfileFromUser])
-
-  // Location tracking
+  // Internal location tracking function
   const startLocationTrackingInternal = useCallback(() => {
     if (!navigator.geolocation) {
-      setLocationError("Geolocation is not supported")
+      setLocationError("Geolocation is not supported by your browser")
       return
     }
 
@@ -187,32 +173,96 @@ export function UserProvider({ children }: { children: ReactNode }) {
       {
         enableHighAccuracy: true,
         timeout: 10000,
-        maximumAge: 60000,
+        maximumAge: 60000, // 1 minute cache
       }
     )
 
     setWatchId(id)
   }, [])
 
-  // Sign in with Google
-  const signInWithGoogle = useCallback(async () => {
-    const redirectUrl = process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ?? 
-      `${window.location.origin}/auth/callback`
-    
-    await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: redirectUrl,
-        queryParams: {
-          access_type: 'offline',
-          prompt: 'consent',
-        },
-      },
-    })
-  }, [supabase.auth])
+  // Clear session helper
+  const clearSession = useCallback(() => {
+    localStorage.removeItem(SESSION_KEY)
+    localStorage.removeItem(USER_KEY)
+    localStorage.removeItem("terraloop_name")
+    localStorage.removeItem("terraloop_phone")
+    clearUserLocation()
+    setSession(null)
+    setUser(null)
+  }, [])
 
-  // Sign out
-  const signOut = useCallback(async () => {
+  // Login action - stores phone temporarily before OTP verification
+  const login = useCallback((phone: string, name: string) => {
+    const pendingUser: UserProfile = {
+      phone,
+      name,
+      role: null,
+      isVerified: false,
+    }
+    setUser(pendingUser)
+    // Store in legacy format for backward compatibility
+    localStorage.setItem("terraloop_phone", phone)
+    localStorage.setItem("terraloop_name", name)
+  }, [])
+
+  // Verify OTP action
+  const verifyOTP = useCallback(async (otp: string): Promise<boolean> => {
+    // In production, this would call an API to verify the OTP
+    // For now, we'll simulate verification (accept any 6-digit OTP)
+    if (otp.length !== 6 || !/^\d+$/.test(otp)) {
+      return false
+    }
+
+    if (!user) return false
+
+    // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 500))
+
+    // Update user to verified
+    const verifiedUser: UserProfile = {
+      ...user,
+      isVerified: true,
+      verifiedAt: Date.now(),
+    }
+
+    // Create session
+    const newSession: UserSession = {
+      userId: `user_${user.phone}_${Date.now()}`,
+      phone: user.phone,
+      name: user.name,
+      role: user.role,
+      isVerified: true,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + SESSION_DURATION,
+    }
+
+    // Save to state and localStorage
+    setUser(verifiedUser)
+    setSession(newSession)
+    localStorage.setItem(SESSION_KEY, JSON.stringify(newSession))
+    localStorage.setItem(USER_KEY, JSON.stringify(verifiedUser))
+
+    // Start location tracking immediately after verification
+    startLocationTrackingInternal()
+
+    return true
+  }, [user, startLocationTrackingInternal])
+
+  // Set user role
+  const setRole = useCallback((role: "grocer" | "buyer") => {
+    if (!user || !session) return
+
+    const updatedUser = { ...user, role }
+    const updatedSession = { ...session, role }
+
+    setUser(updatedUser)
+    setSession(updatedSession)
+    localStorage.setItem(USER_KEY, JSON.stringify(updatedUser))
+    localStorage.setItem(SESSION_KEY, JSON.stringify(updatedSession))
+  }, [user, session])
+
+  // Logout action
+  const logout = useCallback(() => {
     // Stop location tracking
     if (watchId !== null) {
       navigator.geolocation.clearWatch(watchId)
@@ -221,44 +271,11 @@ export function UserProvider({ children }: { children: ReactNode }) {
     setIsLocationTracking(false)
     setCurrentLocation(null)
     
-    // Clear local data
-    localStorage.removeItem(PROFILE_KEY)
-    localStorage.removeItem("terraloop_name")
-    localStorage.removeItem("terraloop_phone")
-    clearUserLocation()
-    
-    // Sign out from Supabase
-    await supabase.auth.signOut()
-    
-    setUser(null)
-    setSupabaseUser(null)
-    setSession(null)
-  }, [supabase.auth, watchId])
+    // Clear session
+    clearSession()
+  }, [watchId, clearSession])
 
-  // Update profile
-  const updateProfile = useCallback((data: Partial<UserProfile>) => {
-    if (!user) return
-    
-    const updatedUser = { ...user, ...data }
-    setUser(updatedUser)
-    localStorage.setItem(PROFILE_KEY, JSON.stringify(updatedUser))
-    
-    // Also update legacy storage for backward compatibility
-    if (data.name) {
-      localStorage.setItem("terraloop_name", data.name)
-    }
-    if (data.phone) {
-      localStorage.setItem("terraloop_phone", data.phone)
-    }
-  }, [user])
-
-  // Set role
-  const setRole = useCallback((role: "grocer" | "buyer") => {
-    if (!user) return
-    updateProfile({ role })
-  }, [user, updateProfile])
-
-  // Start location tracking
+  // Start location tracking (public method)
   const startLocationTracking = useCallback(() => {
     startLocationTrackingInternal()
   }, [startLocationTrackingInternal])
@@ -272,7 +289,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
     setIsLocationTracking(false)
   }, [watchId])
 
-  // Cleanup
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (watchId !== null) {
@@ -283,17 +300,16 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
   const value: UserContextState = {
     user,
-    supabaseUser,
     session,
-    isAuthenticated: !!session,
+    isAuthenticated: !!session && session.expiresAt > Date.now(),
     isLoading,
     currentLocation,
     isLocationTracking,
     locationError,
-    signInWithGoogle,
-    signOut,
-    updateProfile,
+    login,
+    verifyOTP,
     setRole,
+    logout,
     startLocationTracking,
     stopLocationTracking,
     GEOFENCE_RADIUS_KM,
@@ -306,7 +322,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
   )
 }
 
-// Custom hook
+// Custom hook to use the context
 export function useUser() {
   const context = useContext(UserContext)
   if (!context) {
@@ -315,4 +331,5 @@ export function useUser() {
   return context
 }
 
+// Export the geofence radius constant for use elsewhere
 export { GEOFENCE_RADIUS_KM }
