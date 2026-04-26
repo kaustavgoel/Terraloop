@@ -33,16 +33,37 @@ export default function IntroPage() {
         <div className="absolute top-1/4 left-1/4 h-64 w-64 rounded-full bg-[#8b4513]/5 blur-3xl" />
         <div className="absolute bottom-1/4 right-1/4 h-64 w-64 rounded-full bg-[#1a472a]/5 blur-3xl" />
         
-        {/* Floating magical particles */}
-        {[...Array(20)].map((_, i) => (
+        {/* Floating magical particles - using deterministic positions to avoid hydration mismatch */}
+        {[
+          { left: 5, top: 10, delay: 0.1, duration: 3.2 },
+          { left: 15, top: 80, delay: 1.5, duration: 4.1 },
+          { left: 25, top: 30, delay: 2.3, duration: 3.8 },
+          { left: 35, top: 60, delay: 0.7, duration: 4.5 },
+          { left: 45, top: 15, delay: 1.9, duration: 3.5 },
+          { left: 55, top: 85, delay: 2.8, duration: 4.2 },
+          { left: 65, top: 45, delay: 0.4, duration: 3.9 },
+          { left: 75, top: 70, delay: 1.2, duration: 4.8 },
+          { left: 85, top: 25, delay: 2.1, duration: 3.3 },
+          { left: 95, top: 55, delay: 0.9, duration: 4.0 },
+          { left: 10, top: 40, delay: 1.7, duration: 3.6 },
+          { left: 20, top: 90, delay: 2.5, duration: 4.3 },
+          { left: 30, top: 20, delay: 0.3, duration: 3.7 },
+          { left: 40, top: 75, delay: 1.4, duration: 4.6 },
+          { left: 50, top: 5, delay: 2.0, duration: 3.4 },
+          { left: 60, top: 95, delay: 0.6, duration: 4.4 },
+          { left: 70, top: 35, delay: 1.8, duration: 3.1 },
+          { left: 80, top: 65, delay: 2.6, duration: 4.7 },
+          { left: 90, top: 50, delay: 0.2, duration: 3.0 },
+          { left: 98, top: 8, delay: 1.1, duration: 4.9 },
+        ].map((particle, i) => (
           <div
             key={i}
             className="absolute h-1 w-1 rounded-full bg-[#d4af37]/60 animate-float"
             style={{
-              left: `${Math.random() * 100}%`,
-              top: `${Math.random() * 100}%`,
-              animationDelay: `${Math.random() * 3}s`,
-              animationDuration: `${3 + Math.random() * 2}s`,
+              left: `${particle.left}%`,
+              top: `${particle.top}%`,
+              animationDelay: `${particle.delay}s`,
+              animationDuration: `${particle.duration}s`,
             }}
           />
         ))}
