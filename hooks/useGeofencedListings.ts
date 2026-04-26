@@ -77,7 +77,7 @@ export function useGeofencedListings(
   options: UseGeofencedListingsOptions = {}
 ): UseGeofencedListingsReturn {
   const {
-    radiusKm = 10,
+    radiusKm = 2.5, // Default to 2.5km as per app requirements
     enableRealTimeTracking = true,
     minMovementMeters = 100,
   } = options

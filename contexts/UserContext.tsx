@@ -101,12 +101,23 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
   // Initialize auth state
   useEffect(() => {
+    let mounted = true
+
     const initAuth = async () => {
       try {
+        console.log('[v0] Initializing auth state...')
+        
         // Get initial session
-        const { data: { session: initialSession } } = await supabase.auth.getSession()
+        const { data: { session: initialSession }, error } = await supabase.auth.getSession()
+        
+        if (error) {
+          console.error('[v0] Error getting session:', error.message)
+        }
+        
+        if (!mounted) return
         
         if (initialSession?.user) {
+          console.log('[v0] Session found for user:', initialSession.user.email)
           setSession(initialSession)
           setSupabaseUser(initialSession.user)
           setUser(createProfileFromUser(initialSession.user))
@@ -114,13 +125,18 @@ export function UserProvider({ children }: { children: ReactNode }) {
           // Load saved location
           const savedLocation = getSavedLocation()
           if (savedLocation) {
+            console.log('[v0] Restored saved location')
             setCurrentLocation(savedLocation)
           }
+        } else {
+          console.log('[v0] No active session found')
         }
       } catch (error) {
-        console.error("Error initializing auth:", error)
+        console.error('[v0] Error initializing auth:', error)
       } finally {
-        setIsLoading(false)
+        if (mounted) {
+          setIsLoading(false)
+        }
       }
     }
 
@@ -129,20 +145,48 @@ export function UserProvider({ children }: { children: ReactNode }) {
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, newSession) => {
-        if (newSession?.user) {
+        console.log('[v0] Auth state changed:', event)
+        
+        if (!mounted) return
+        
+        if (event === 'SIGNED_IN' && newSession?.user) {
+          console.log('[v0] User signed in:', newSession.user.email)
           setSession(newSession)
           setSupabaseUser(newSession.user)
           setUser(createProfileFromUser(newSession.user))
-        } else {
+          
+          // Load saved location after sign in
+          const savedLocation = getSavedLocation()
+          if (savedLocation) {
+            setCurrentLocation(savedLocation)
+          }
+        } else if (event === 'SIGNED_OUT') {
+          console.log('[v0] User signed out')
+          setSession(null)
+          setSupabaseUser(null)
+          setUser(null)
+        } else if (event === 'TOKEN_REFRESHED' && newSession?.user) {
+          console.log('[v0] Token refreshed for user:', newSession.user.email)
+          setSession(newSession)
+          setSupabaseUser(newSession.user)
+          setUser(createProfileFromUser(newSession.user))
+        } else if (newSession?.user) {
+          // Handle other events with valid session
+          setSession(newSession)
+          setSupabaseUser(newSession.user)
+          setUser(createProfileFromUser(newSession.user))
+        } else if (!newSession) {
           setSession(null)
           setSupabaseUser(null)
           setUser(null)
         }
+        
         setIsLoading(false)
       }
     )
 
     return () => {
+      mounted = false
       subscription.unsubscribe()
     }
   }, [supabase.auth, createProfileFromUser])
@@ -196,19 +240,33 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
   // Sign in with Google
   const signInWithGoogle = useCallback(async () => {
-    const redirectUrl = process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ?? 
-      `${window.location.origin}/auth/callback`
-    
-    await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: redirectUrl,
-        queryParams: {
-          access_type: 'offline',
-          prompt: 'consent',
+    try {
+      const redirectUrl = process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ?? 
+        `${window.location.origin}/auth/callback`
+      
+      console.log('[v0] Initiating Google sign-in with redirect URL:', redirectUrl)
+      
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: redirectUrl,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          },
         },
-      },
-    })
+      })
+
+      if (error) {
+        console.error('[v0] Google sign-in error:', error.message)
+        throw error
+      }
+
+      console.log('[v0] OAuth redirect initiated:', data?.url ? 'URL generated' : 'No URL')
+    } catch (err) {
+      console.error('[v0] Unexpected error during Google sign-in:', err)
+      throw err
+    }
   }, [supabase.auth])
 
   // Sign out

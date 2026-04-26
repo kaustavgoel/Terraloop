@@ -655,7 +655,8 @@ export function MarketplaceContent({ initialCategory }: MarketplaceContentProps)
   }, [])
   
   // Convert geofenced items to MarketplaceItem format (already done in the hook)
-  const grocerItems: MarketplaceItem[] = geofencedItems.map(item => ({
+  // Safe array handling - use empty array if geofencedItems is undefined
+  const grocerItems: MarketplaceItem[] = (geofencedItems ?? []).map(item => ({
     id: item.id,
     type: "listing" as const,
     name: item.name,
