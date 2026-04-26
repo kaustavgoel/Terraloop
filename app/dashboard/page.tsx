@@ -15,24 +15,12 @@ export default function Home() {
     user, 
     isAuthenticated, 
     isLoading, 
-    logout, 
+    signOut, 
     currentLocation, 
     isLocationTracking,
     startLocationTracking,
     GEOFENCE_RADIUS_KM 
   } = useUser()
-
-  // Redirect to login if not authenticated
-  useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      // Check for legacy session
-      const legacyPhone = localStorage.getItem("terraloop_phone")
-      const legacyName = localStorage.getItem("terraloop_name")
-      if (!legacyPhone || !legacyName) {
-        router.push("/login")
-      }
-    }
-  }, [isAuthenticated, isLoading, router])
 
   // Start location tracking if not already tracking
   useEffect(() => {
@@ -41,8 +29,8 @@ export default function Home() {
     }
   }, [isAuthenticated, isLocationTracking, startLocationTracking])
 
-  const handleLogout = () => {
-    logout()
+  const handleLogout = async () => {
+    await signOut()
     router.push("/login")
   }
 
