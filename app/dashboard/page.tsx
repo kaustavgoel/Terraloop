@@ -1,17 +1,87 @@
 "use client"
 
+import { useEffect } from "react"
 import Link from "next/link"
-import { ShoppingCart, Store, Sparkles, Star, Trophy, Zap } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { ShoppingCart, Store, Sparkles, Star, Trophy, Zap, LogOut, MapPin, Loader2 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/theme-toggle"
+import { useUser } from "@/contexts/UserContext"
 
 export default function Home() {
+  const router = useRouter()
+  const { 
+    user, 
+    isAuthenticated, 
+    isLoading, 
+    logout, 
+    currentLocation, 
+    isLocationTracking,
+    startLocationTracking,
+    GEOFENCE_RADIUS_KM 
+  } = useUser()
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      // Check for legacy session
+      const legacyPhone = localStorage.getItem("terraloop_phone")
+      const legacyName = localStorage.getItem("terraloop_name")
+      if (!legacyPhone || !legacyName) {
+        router.push("/login")
+      }
+    }
+  }, [isAuthenticated, isLoading, router])
+
+  // Start location tracking if not already tracking
+  useEffect(() => {
+    if (isAuthenticated && !isLocationTracking) {
+      startLocationTracking()
+    }
+  }, [isAuthenticated, isLocationTracking, startLocationTracking])
+
+  const handleLogout = () => {
+    logout()
+    router.push("/login")
+  }
+
+  // Show loading state while checking auth
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="text-center">
+          <Loader2 className="mx-auto h-8 w-8 animate-spin text-[#d4af37]" />
+          <p className="mt-4 text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    )
+  }
   return (
     <div className="relative min-h-screen overflow-hidden bg-background">
-      {/* Theme Toggle */}
-      <div className="absolute right-4 top-4 z-50">
+      {/* Theme Toggle & Logout */}
+      <div className="absolute right-4 top-4 z-50 flex items-center gap-2">
         <ThemeToggle />
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={handleLogout}
+          className="border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300"
+          title="Logout"
+        >
+          <LogOut className="h-4 w-4" />
+        </Button>
       </div>
+
+      {/* Location Status */}
+      {currentLocation && (
+        <div className="absolute left-4 top-4 z-50">
+          <div className="flex items-center gap-2 rounded-full border border-green-500/30 bg-green-500/10 px-3 py-1.5 text-xs text-green-400">
+            <MapPin className="h-3 w-3" />
+            <span>Tracking ({GEOFENCE_RADIUS_KM}km radius)</span>
+          </div>
+        </div>
+      )}
 
       {/* Magical background effects */}
       <div className="absolute inset-0 overflow-hidden">

@@ -6,9 +6,11 @@ import { ArrowLeft, Phone, Shield, Sparkles, Loader2, MapPin, CheckCircle2 } fro
 import { Card, CardContent } from "@/components/ui/card"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { autoDetectLocation, getSavedLocation, type UserLocation } from "@/lib/location"
+import { useUser } from "@/contexts/UserContext"
 
 export default function LoginPage() {
   const router = useRouter()
+  const { login, verifyOTP, isAuthenticated, isLoading: isAuthLoading, currentLocation, isLocationTracking, startLocationTracking } = useUser()
   const [step, setStep] = useState<"phone" | "otp">("phone")
   const [phoneNumber, setPhoneNumber] = useState("")
   const [otp, setOtp] = useState(["", "", "", "", "", ""])
@@ -17,6 +19,13 @@ export default function LoginPage() {
   const [userLocation, setUserLocation] = useState<UserLocation | null>(null)
   const [locationStatus, setLocationStatus] = useState<"detecting" | "success" | "error" | "idle">("idle")
   const otpRefs = useRef<(HTMLInputElement | null)[]>([])
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (!isAuthLoading && isAuthenticated) {
+      router.push("/dashboard")
+    }
+  }, [isAuthenticated, isAuthLoading, router])
 
   // Auto-detect location on mount (silently in background)
   useEffect(() => {
@@ -81,11 +90,25 @@ export default function LoginPage() {
     const otpValue = otp.join("")
     if (otpValue.length === 6) {
       setIsLoading(true)
-      // Simulate OTP verification
-      await new Promise(resolve => setTimeout(resolve, 1500))
+      
+      // First, store the phone number for the name page
       localStorage.setItem("terraloop_phone", phoneNumber)
+      
+      // Simulate OTP verification delay
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      
+      // Verify OTP using context (this also starts location tracking)
+      const tempName = "User" // Temporary name, will be updated on name page
+      login(phoneNumber, tempName)
+      const success = await verifyOTP(otpValue)
+      
       setIsLoading(false)
-      router.push("/name")
+      
+      if (success) {
+        // Start location tracking immediately
+        startLocationTracking()
+        router.push("/name")
+      }
     }
   }
 
