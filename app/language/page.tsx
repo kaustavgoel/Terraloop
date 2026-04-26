@@ -14,7 +14,7 @@ export default function LanguagePage() {
   const handleContinue = () => {
     if (selectedLanguage) {
       localStorage.setItem("terraloop_language", selectedLanguage)
-      router.push("/login")
+      router.push("/dashboard")
     }
   }
 

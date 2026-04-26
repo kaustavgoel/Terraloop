@@ -2,39 +2,28 @@
 
 import { useEffect } from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
-import { ShoppingCart, Store, Sparkles, Star, Trophy, Zap, LogOut, MapPin, Loader2 } from "lucide-react"
+import { ShoppingCart, Store, Sparkles, Star, Trophy, Zap, MapPin, Loader2 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { useUser } from "@/contexts/UserContext"
 
 export default function Home() {
-  const router = useRouter()
   const { 
-    user, 
-    isAuthenticated, 
     isLoading, 
-    signOut, 
     currentLocation, 
     isLocationTracking,
     startLocationTracking,
     GEOFENCE_RADIUS_KM 
   } = useUser()
 
-  // Start location tracking if not already tracking
+  // Start location tracking on mount
   useEffect(() => {
-    if (isAuthenticated && !isLocationTracking) {
+    if (!isLocationTracking) {
       startLocationTracking()
     }
-  }, [isAuthenticated, isLocationTracking, startLocationTracking])
+  }, [isLocationTracking, startLocationTracking])
 
-  const handleLogout = async () => {
-    await signOut()
-    router.push("/login")
-  }
-
-  // Show loading state while checking auth
+  // Show loading state
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
@@ -47,18 +36,9 @@ export default function Home() {
   }
   return (
     <div className="relative min-h-screen overflow-hidden bg-background">
-      {/* Theme Toggle & Logout */}
-      <div className="absolute right-4 top-4 z-50 flex items-center gap-2">
+      {/* Theme Toggle */}
+      <div className="absolute right-4 top-4 z-50">
         <ThemeToggle />
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={handleLogout}
-          className="border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300"
-          title="Logout"
-        >
-          <LogOut className="h-4 w-4" />
-        </Button>
       </div>
 
       {/* Location Status */}

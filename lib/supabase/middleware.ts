@@ -39,28 +39,7 @@ export async function updateSession(request: NextRequest) {
   )
 
   // Refresh session - important for keeping users logged in
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  // Protected routes - redirect to login if not authenticated
-  const protectedPaths = ['/dashboard', '/grocer', '/buyer']
-  const isProtectedPath = protectedPaths.some(path => 
-    request.nextUrl.pathname.startsWith(path)
-  )
-
-  if (isProtectedPath && !user) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/login'
-    return NextResponse.redirect(url)
-  }
-
-  // If user is logged in and tries to access login page, redirect to dashboard
-  if (request.nextUrl.pathname === '/login' && user) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/dashboard'
-    return NextResponse.redirect(url)
-  }
+  await supabase.auth.getUser()
 
   return supabaseResponse
 }
