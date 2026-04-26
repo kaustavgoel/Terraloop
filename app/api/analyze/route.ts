@@ -75,7 +75,9 @@ Return ONLY a valid JSON object with this exact structure (no markdown, no code 
 
     return NextResponse.json({ analysis: text });
   } catch (error) {
-    console.error("Error analyzing image:", error);
+    console.error("[v0] Full error object:", error);
+    console.error("[v0] Error message:", error instanceof Error ? error.message : "Unknown error");
+    console.error("[v0] Error stack:", error instanceof Error ? error.stack : "No stack");
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to analyze image" },
       { status: 500 }
