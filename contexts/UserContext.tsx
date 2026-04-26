@@ -83,21 +83,62 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
   const supabase = createClient()
 
+  // Fetch profile from Supabase database
+  const fetchSupabaseProfile = useCallback(async (userId: string) => {
+    try {
+      const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single()
+      if (error && error.code !== 'PGRST116') {
+        console.error('[v0] Error fetching profile:', error)
+      }
+      return data
+    } catch (err) {
+      console.error('[v0] Error fetching profile:', err)
+      return null
+    }
+  }, [supabase])
+
+  // Update profile in Supabase database
+  const updateSupabaseProfile = useCallback(async (userId: string, updates: Record<string, unknown>) => {
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .upsert({ id: userId, ...updates, updated_at: new Date().toISOString() })
+      if (error) {
+        console.error('[v0] Error updating profile:', error)
+        return false
+      }
+      return true
+    } catch (err) {
+      console.error('[v0] Error updating profile:', err)
+      return false
+    }
+  }, [supabase])
+
   // Convert Supabase user to UserProfile
-  const createProfileFromUser = useCallback((supaUser: User): UserProfile => {
-    // Try to get saved profile data
+  const createProfileFromUser = useCallback(async (supaUser: User): Promise<UserProfile> => {
+    // Try to get profile from Supabase database first
+    const dbProfile = await fetchSupabaseProfile(supaUser.id)
+    
+    // Fallback to local storage for backward compatibility
     const savedProfile = localStorage.getItem(PROFILE_KEY)
     const parsedProfile = savedProfile ? JSON.parse(savedProfile) : {}
     
-    return {
+    const profile: UserProfile = {
       id: supaUser.id,
       email: supaUser.email ?? null,
-      name: parsedProfile.name || supaUser.user_metadata?.full_name || supaUser.user_metadata?.name || supaUser.email?.split('@')[0] || 'User',
-      avatar: supaUser.user_metadata?.avatar_url || supaUser.user_metadata?.picture,
-      role: parsedProfile.role || null,
-      phone: parsedProfile.phone,
+      name: dbProfile?.name || parsedProfile.name || supaUser.user_metadata?.full_name || supaUser.user_metadata?.name || supaUser.email?.split('@')[0] || 'User',
+      avatar: dbProfile?.avatar_url || supaUser.user_metadata?.avatar_url || supaUser.user_metadata?.picture,
+      role: dbProfile?.role || parsedProfile.role || null,
+      phone: dbProfile?.phone || parsedProfile.phone,
     }
-  }, [])
+    
+    // Sync local storage data to Supabase if needed
+    if (!dbProfile?.phone && parsedProfile.phone) {
+      await updateSupabaseProfile(supaUser.id, { phone: parsedProfile.phone, role: parsedProfile.role })
+    }
+    
+    return profile
+  }, [fetchSupabaseProfile, updateSupabaseProfile])
 
   // Initialize auth state
   useEffect(() => {
@@ -105,7 +146,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
     const initAuth = async () => {
       try {
-        console.log('[v0] Initializing auth state...')
+        // console.log('[v0] Initializing auth state...')
         
         // Get initial session
         const { data: { session: initialSession }, error } = await supabase.auth.getSession()
@@ -117,19 +158,20 @@ export function UserProvider({ children }: { children: ReactNode }) {
         if (!mounted) return
         
         if (initialSession?.user) {
-          console.log('[v0] Session found for user:', initialSession.user.email)
+          // console.log('[v0] Session found for user:', initialSession.user.email)
           setSession(initialSession)
           setSupabaseUser(initialSession.user)
-          setUser(createProfileFromUser(initialSession.user))
+          const profile = await createProfileFromUser(initialSession.user)
+          setUser(profile)
           
           // Load saved location
           const savedLocation = getSavedLocation()
           if (savedLocation) {
-            console.log('[v0] Restored saved location')
+            // console.log('[v0] Restored saved location')
             setCurrentLocation(savedLocation)
           }
         } else {
-          console.log('[v0] No active session found')
+          // console.log('[v0] No active session found')
         }
       } catch (error) {
         console.error('[v0] Error initializing auth:', error)
@@ -145,15 +187,16 @@ export function UserProvider({ children }: { children: ReactNode }) {
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, newSession) => {
-        console.log('[v0] Auth state changed:', event)
+        // console.log('[v0] Auth state changed:', event)
         
         if (!mounted) return
         
         if (event === 'SIGNED_IN' && newSession?.user) {
-          console.log('[v0] User signed in:', newSession.user.email)
+          // console.log('[v0] User signed in:', newSession.user.email)
           setSession(newSession)
           setSupabaseUser(newSession.user)
-          setUser(createProfileFromUser(newSession.user))
+          const profile = await createProfileFromUser(newSession.user)
+          setUser(profile)
           
           // Load saved location after sign in
           const savedLocation = getSavedLocation()
@@ -161,20 +204,22 @@ export function UserProvider({ children }: { children: ReactNode }) {
             setCurrentLocation(savedLocation)
           }
         } else if (event === 'SIGNED_OUT') {
-          console.log('[v0] User signed out')
+          // console.log('[v0] User signed out')
           setSession(null)
           setSupabaseUser(null)
           setUser(null)
         } else if (event === 'TOKEN_REFRESHED' && newSession?.user) {
-          console.log('[v0] Token refreshed for user:', newSession.user.email)
+          // console.log('[v0] Token refreshed for user:', newSession.user.email)
           setSession(newSession)
           setSupabaseUser(newSession.user)
-          setUser(createProfileFromUser(newSession.user))
+          const profile = await createProfileFromUser(newSession.user)
+          setUser(profile)
         } else if (newSession?.user) {
           // Handle other events with valid session
           setSession(newSession)
           setSupabaseUser(newSession.user)
-          setUser(createProfileFromUser(newSession.user))
+          const profile = await createProfileFromUser(newSession.user)
+          setUser(profile)
         } else if (!newSession) {
           setSession(null)
           setSupabaseUser(null)
@@ -244,7 +289,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
       const redirectUrl = process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ?? 
         `${window.location.origin}/auth/callback`
       
-      console.log('[v0] Initiating Google sign-in with redirect URL:', redirectUrl)
+      // console.log('[v0] Initiating Google sign-in with redirect URL:', redirectUrl)
       
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
@@ -262,7 +307,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
         throw error
       }
 
-      console.log('[v0] OAuth redirect initiated:', data?.url ? 'URL generated' : 'No URL')
+      // console.log('[v0] OAuth redirect initiated:', data?.url ? 'URL generated' : 'No URL')
     } catch (err) {
       console.error('[v0] Unexpected error during Google sign-in:', err)
       throw err
@@ -308,7 +353,16 @@ export function UserProvider({ children }: { children: ReactNode }) {
     if (data.phone) {
       localStorage.setItem("terraloop_phone", data.phone)
     }
-  }, [user])
+    
+    // Sync to Supabase database
+    const dbUpdates: Record<string, unknown> = {}
+    if (data.name) dbUpdates.name = data.name
+    if (data.phone) dbUpdates.phone = data.phone
+    if (data.role) dbUpdates.role = data.role
+    if (Object.keys(dbUpdates).length > 0) {
+      updateSupabaseProfile(user.id, dbUpdates)
+    }
+  }, [user, updateSupabaseProfile])
 
   // Set role
   const setRole = useCallback((role: "grocer" | "buyer") => {
