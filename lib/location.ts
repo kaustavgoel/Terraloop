@@ -43,6 +43,9 @@ export function clearSavedLocation(): void {
   localStorage.removeItem(LOCATION_KEY)
 }
 
+// Alias for backwards compatibility
+export const clearUserLocation = clearSavedLocation
+
 // Auto-detect location silently (returns a promise)
 export function autoDetectLocation(): Promise<UserLocation> {
   return new Promise((resolve, reject) => {
