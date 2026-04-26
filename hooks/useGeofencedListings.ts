@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react"
 import { createClient } from "@/lib/supabase/client"
+import { getSavedLocation, saveUserLocation } from "@/lib/location"
 
 // Listing type from database
 export interface GeoListing {
@@ -116,7 +117,6 @@ export function useGeofencedListings(
         lastFetchLocation.current = { lat, lng }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to fetch listings")
-        console.error("[v0] Error fetching geofenced listings:", err)
       } finally {
         setIsLoading(false)
       }
@@ -142,6 +142,14 @@ export function useGeofencedListings(
 
       setLocation(newLocation)
       setLocationError(null)
+      
+      // Save to localStorage for persistence across pages
+      saveUserLocation({
+        latitude: newLocation.latitude,
+        longitude: newLocation.longitude,
+        accuracy: newLocation.accuracy,
+        timestamp: Date.now(),
+      })
 
       // Check if user has moved more than threshold
       const shouldFetch =
@@ -179,7 +187,6 @@ export function useGeofencedListings(
     }
 
     setLocationError(errorMessage)
-    console.error("[v0] Geolocation error:", errorMessage)
   }, [])
 
   // Start tracking location
@@ -229,7 +236,24 @@ export function useGeofencedListings(
     setIsLocationTracking(false)
   }, [])
 
-  // Auto-start tracking on mount if enabled
+  // Load saved location on mount (separate from tracking effect)
+  useEffect(() => {
+    const savedLocation = getSavedLocation()
+    if (savedLocation) {
+      const geoLocation: GeoLocation = {
+        latitude: savedLocation.latitude,
+        longitude: savedLocation.longitude,
+        accuracy: savedLocation.accuracy,
+      }
+      setLocation(geoLocation)
+      setIsLocationTracking(true)
+      // Fetch listings immediately with saved location
+      fetchListings(savedLocation.latitude, savedLocation.longitude)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // Only run on mount
+  
+  // Start real-time tracking for location updates
   useEffect(() => {
     if (enableRealTimeTracking) {
       startTracking()

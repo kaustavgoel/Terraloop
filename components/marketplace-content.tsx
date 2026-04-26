@@ -622,7 +622,7 @@ export function MarketplaceContent({ initialCategory }: MarketplaceContentProps)
     isLocationTracking,
     startTracking,
   } = useMarketplaceListings({
-    radiusKm: 50, // 50km radius for nearby sellers
+    radiusKm: 5, // 5km radius for nearby sellers only
     enableRealTimeTracking: true,
     minMovementMeters: 100, // Only refetch if user moves 100m+
   })

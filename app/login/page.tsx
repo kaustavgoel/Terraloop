@@ -2,9 +2,10 @@
 
 import { useState, useRef, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { ArrowLeft, Phone, Shield, Sparkles, Loader2 } from "lucide-react"
+import { ArrowLeft, Phone, Shield, Sparkles, Loader2, MapPin, CheckCircle2 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { ThemeToggle } from "@/components/theme-toggle"
+import { autoDetectLocation, getSavedLocation, type UserLocation } from "@/lib/location"
 
 export default function LoginPage() {
   const router = useRouter()
@@ -13,7 +14,31 @@ export default function LoginPage() {
   const [otp, setOtp] = useState(["", "", "", "", "", ""])
   const [isLoading, setIsLoading] = useState(false)
   const [countdown, setCountdown] = useState(0)
+  const [userLocation, setUserLocation] = useState<UserLocation | null>(null)
+  const [locationStatus, setLocationStatus] = useState<"detecting" | "success" | "error" | "idle">("idle")
   const otpRefs = useRef<(HTMLInputElement | null)[]>([])
+
+  // Auto-detect location on mount (silently in background)
+  useEffect(() => {
+    // Check if we already have a saved location
+    const savedLocation = getSavedLocation()
+    if (savedLocation) {
+      setUserLocation(savedLocation)
+      setLocationStatus("success")
+      return
+    }
+
+    // Auto-detect location
+    setLocationStatus("detecting")
+    autoDetectLocation()
+      .then((location) => {
+        setUserLocation(location)
+        setLocationStatus("success")
+      })
+      .catch(() => {
+        setLocationStatus("error")
+      })
+  }, [])
 
   useEffect(() => {
     if (countdown > 0) {
@@ -85,6 +110,38 @@ export default function LoginPage() {
       >
         <ArrowLeft className="h-5 w-5 text-[#d4af37]" />
       </button>
+
+      {/* Location Status Indicator */}
+      <div className="absolute left-4 bottom-4 z-50">
+        <div className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-xs backdrop-blur-sm transition-all ${
+          locationStatus === "success" 
+            ? "border border-green-500/30 bg-green-500/10 text-green-400"
+            : locationStatus === "detecting"
+            ? "border border-[#d4af37]/30 bg-[#d4af37]/10 text-[#d4af37]"
+            : locationStatus === "error"
+            ? "border border-red-500/30 bg-red-500/10 text-red-400"
+            : "border border-border bg-card/50 text-muted-foreground"
+        }`}>
+          {locationStatus === "detecting" && (
+            <>
+              <Loader2 className="h-3 w-3 animate-spin" />
+              <span>Detecting location...</span>
+            </>
+          )}
+          {locationStatus === "success" && (
+            <>
+              <CheckCircle2 className="h-3 w-3" />
+              <span>Location detected</span>
+            </>
+          )}
+          {locationStatus === "error" && (
+            <>
+              <MapPin className="h-3 w-3" />
+              <span>Location unavailable</span>
+            </>
+          )}
+        </div>
+      </div>
 
       {/* Background effects */}
       <div className="absolute inset-0 overflow-hidden">
