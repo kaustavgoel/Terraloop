@@ -1,9 +1,9 @@
--- Create the get_nearby_listings stored procedure (RPC)
--- This function returns sellers within a specified radius from the user's location
+-- Create the get_nearby_listings RPC function using Haversine formula (no PostGIS)
+-- This function returns listings within a specified radius from the user's location
 CREATE OR REPLACE FUNCTION get_nearby_listings(
-  user_lat NUMERIC,
-  user_lng NUMERIC,
-  radius_km NUMERIC DEFAULT 10
+  user_lat DOUBLE PRECISION,
+  user_lng DOUBLE PRECISION,
+  radius_km DOUBLE PRECISION DEFAULT 10
 )
 RETURNS TABLE (
   id UUID,
@@ -23,52 +23,62 @@ RETURNS TABLE (
   quantity INTEGER,
   sold BOOLEAN,
   listed_at TIMESTAMPTZ,
-  latitude NUMERIC,
-  longitude NUMERIC,
-  distance_km NUMERIC
+  latitude DOUBLE PRECISION,
+  longitude DOUBLE PRECISION,
+  distance_km DOUBLE PRECISION
 )
-LANGUAGE plpgsql
+LANGUAGE sql
 SECURITY DEFINER
+STABLE
 AS $$
-BEGIN
-  RETURN QUERY
+  WITH distances AS (
+    SELECT
+      l.*,
+      -- Haversine formula to calculate distance in km
+      (
+        6371 * acos(
+          LEAST(1.0, GREATEST(-1.0,
+            cos(radians(user_lat)) * cos(radians(l.latitude)) *
+            cos(radians(l.longitude) - radians(user_lng)) +
+            sin(radians(user_lat)) * sin(radians(l.latitude))
+          ))
+        )
+      ) AS calc_distance_km
+    FROM listings l
+    WHERE 
+      l.sold = FALSE
+      AND l.quantity > 0
+      -- Bounding box pre-filter for performance (approximate)
+      AND l.latitude BETWEEN user_lat - (radius_km / 111.0) AND user_lat + (radius_km / 111.0)
+      AND l.longitude BETWEEN user_lng - (radius_km / (111.0 * GREATEST(cos(radians(user_lat)), 0.01))) 
+                          AND user_lng + (radius_km / (111.0 * GREATEST(cos(radians(user_lat)), 0.01)))
+  )
   SELECT
-    l.id,
-    l.fruit_name,
-    l.category,
-    l.freshness,
-    l.shelf_life,
-    l.verdict,
-    l.images,
-    l.recommended_uses,
-    l.grocer_name,
-    l.grocer_phone,
-    l.grocer_location,
-    l.price,
-    l.base_price,
-    l.price_margin,
-    l.quantity,
-    l.sold,
-    l.listed_at,
-    l.latitude,
-    l.longitude,
-    -- Calculate distance in kilometers
-    ROUND((ST_Distance(
-      l.location,
-      ST_SetSRID(ST_MakePoint(user_lng, user_lat), 4326)::geography
-    ) / 1000)::NUMERIC, 2) AS distance_km
-  FROM listings l
-  WHERE 
-    l.sold = FALSE
-    AND ST_DWithin(
-      l.location,
-      ST_SetSRID(ST_MakePoint(user_lng, user_lat), 4326)::geography,
-      radius_km * 1000  -- Convert km to meters
-    )
-  ORDER BY distance_km ASC, l.listed_at DESC;
-END;
+    d.id,
+    d.fruit_name,
+    d.category,
+    d.freshness,
+    d.shelf_life,
+    d.verdict,
+    d.images,
+    d.recommended_uses,
+    d.grocer_name,
+    d.grocer_phone,
+    d.grocer_location,
+    d.price,
+    d.base_price,
+    d.price_margin,
+    d.quantity,
+    d.sold,
+    d.listed_at,
+    d.latitude,
+    d.longitude,
+    ROUND(d.calc_distance_km::NUMERIC, 2) AS distance_km
+  FROM distances d
+  WHERE d.calc_distance_km <= radius_km
+  ORDER BY d.calc_distance_km ASC, d.listed_at DESC;
 $$;
 
 -- Grant execute permission to anon and authenticated users
-GRANT EXECUTE ON FUNCTION get_nearby_listings(NUMERIC, NUMERIC, NUMERIC) TO anon;
-GRANT EXECUTE ON FUNCTION get_nearby_listings(NUMERIC, NUMERIC, NUMERIC) TO authenticated;
+GRANT EXECUTE ON FUNCTION get_nearby_listings(DOUBLE PRECISION, DOUBLE PRECISION, DOUBLE PRECISION) TO anon;
+GRANT EXECUTE ON FUNCTION get_nearby_listings(DOUBLE PRECISION, DOUBLE PRECISION, DOUBLE PRECISION) TO authenticated;

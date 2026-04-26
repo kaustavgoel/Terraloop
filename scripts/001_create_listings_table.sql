@@ -1,7 +1,4 @@
--- Enable PostGIS extension for geospatial queries
-CREATE EXTENSION IF NOT EXISTS postgis;
-
--- Create the listings table with geospatial support
+-- Create the listings table (without PostGIS dependency)
 CREATE TABLE IF NOT EXISTS listings (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   fruit_name TEXT NOT NULL,
@@ -20,47 +17,40 @@ CREATE TABLE IF NOT EXISTS listings (
   quantity INTEGER NOT NULL DEFAULT 1,
   sold BOOLEAN DEFAULT FALSE,
   listed_at TIMESTAMPTZ DEFAULT NOW(),
-  -- Geospatial fields
-  latitude NUMERIC(10,7) NOT NULL,
-  longitude NUMERIC(10,7) NOT NULL,
-  location GEOGRAPHY(POINT, 4326) GENERATED ALWAYS AS (
-    ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)::geography
-  ) STORED,
-  -- User reference (optional - for RLS)
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE
+  -- Geospatial fields (plain numeric, no PostGIS)
+  latitude DOUBLE PRECISION NOT NULL,
+  longitude DOUBLE PRECISION NOT NULL,
+  -- User reference (optional)
+  user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL
 );
 
--- Create spatial index for fast geofencing queries
-CREATE INDEX IF NOT EXISTS idx_listings_location ON listings USING GIST (location);
-
--- Create index for common queries
+-- Create indexes for efficient querying
+CREATE INDEX IF NOT EXISTS idx_listings_lat_lng ON listings (latitude, longitude);
 CREATE INDEX IF NOT EXISTS idx_listings_sold ON listings (sold);
 CREATE INDEX IF NOT EXISTS idx_listings_category ON listings (category);
 CREATE INDEX IF NOT EXISTS idx_listings_listed_at ON listings (listed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_listings_grocer_phone ON listings (grocer_phone);
 
 -- Enable Row Level Security
 ALTER TABLE listings ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies
--- Anyone can view available (not sold) listings
-CREATE POLICY "Anyone can view available listings"
+-- Anyone can view all listings (marketplace is public)
+CREATE POLICY "Anyone can view listings"
   ON listings FOR SELECT
-  USING (sold = FALSE);
+  USING (true);
 
--- Authenticated users can insert their own listings
-CREATE POLICY "Authenticated users can insert own listings"
+-- Anyone can insert listings (for easier demo - in production, restrict to authenticated)
+CREATE POLICY "Anyone can insert listings"
   ON listings FOR INSERT
-  TO authenticated
-  WITH CHECK (auth.uid() = user_id);
+  WITH CHECK (true);
 
--- Users can update their own listings
-CREATE POLICY "Users can update own listings"
+-- Anyone can update listings (for demo purposes)
+CREATE POLICY "Anyone can update listings"
   ON listings FOR UPDATE
-  TO authenticated
-  USING (auth.uid() = user_id);
+  USING (true);
 
--- Users can delete their own listings
-CREATE POLICY "Users can delete own listings"
+-- Anyone can delete listings (for demo purposes)
+CREATE POLICY "Anyone can delete listings"
   ON listings FOR DELETE
-  TO authenticated
-  USING (auth.uid() = user_id);
+  USING (true);
