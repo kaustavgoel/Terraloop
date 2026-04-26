@@ -14,6 +14,8 @@ import { Label } from "@/components/ui/label"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { addListing, getCurrentUser, getRandomLocation, getGrocerListings, type GrocerListing } from "@/lib/store"
 import { useLocalization, type Language } from "@/lib/localization"
+import { createSupabaseListing } from "@/lib/listing-service"
+import { getSavedLocation } from "@/lib/location"
 
 interface AnalysisResult {
   rating: number
@@ -157,7 +159,7 @@ export default function GrocerPage() {
     }
   }
 
-  const confirmListing = () => {
+  const confirmListing = async () => {
     if (!analysisResult) return
 
     const user = getCurrentUser()
@@ -166,9 +168,17 @@ export default function GrocerPage() {
       return
     }
 
-    const newListing = addListing({
+    // Check if we have location for geofencing
+    const savedLocation = getSavedLocation()
+    if (!savedLocation) {
+      alert("Location is required to list items. Please enable location services.")
+      return
+    }
+
+    const grocerLocation = getRandomLocation()
+    const listingData = {
       fruitName: analysisResult.fruitType,
-      category: analysisResult.category || "climacteric",
+      category: analysisResult.category || "climacteric" as const,
       freshness: analysisResult.rating,
       shelfLife: analysisResult.shelfLife,
       verdict: analysisResult.verdict,
@@ -176,10 +186,21 @@ export default function GrocerPage() {
       recommendedUses: analysisResult.recommendedUses || [],
       grocerName: user.name,
       grocerPhone: user.phone,
-      grocerLocation: getRandomLocation(),
+      grocerLocation: grocerLocation,
       price: adjustedPrice,
       quantity: quantity,
-    })
+    }
+
+    // Save to localStorage (legacy)
+    const newListing = addListing(listingData)
+
+    // Also sync to Supabase for geofenced marketplace
+    try {
+      await createSupabaseListing(listingData)
+    } catch (error) {
+      console.error("Failed to sync to Supabase:", error)
+      // Continue anyway - local listing is saved
+    }
 
     setUploadedFruits(prev => [...prev, newListing])
     setXpEarned(prev => prev + 50)

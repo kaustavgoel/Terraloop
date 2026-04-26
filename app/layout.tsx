@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { Cinzel, Lora } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { ThemeProvider } from '@/components/theme-provider'
+import { UserProvider } from '@/contexts/UserContext'
 import './globals.css'
 
 const cinzel = Cinzel({ subsets: ["latin"], variable: "--font-cinzel" });
@@ -44,7 +45,9 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          {children}
+          <UserProvider>
+            {children}
+          </UserProvider>
         </ThemeProvider>
         <Analytics />
       </body>

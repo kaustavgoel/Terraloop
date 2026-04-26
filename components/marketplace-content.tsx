@@ -28,7 +28,11 @@ import {
   Minus,
   X,
   Wand2,
-  Package
+  Package,
+  Locate,
+  Navigation,
+  AlertCircle,
+  Loader2
 } from "lucide-react"
 import { fruits, getCategoryInfo, type Fruit } from "@/lib/fruit-data"
 import { 
@@ -45,6 +49,7 @@ import {
   type CartItem,
   type PurchaseOrder
 } from "@/lib/store"
+import { useMarketplaceListings } from "@/hooks/useGeofencedListings"
 
 interface MarketplaceContentProps {
   initialCategory: "climacteric" | "non-climacteric" | null
@@ -66,6 +71,7 @@ interface MarketplaceItem {
   sellerName: string
   sellerPhone: string
   sellerAddress: string
+  distanceKm?: number // Distance from user (for geofenced listings)
 }
 
 function FreshnessBar({ freshness }: { freshness: number }) {
@@ -256,6 +262,12 @@ function FruitCard({ item, onAddToCart, cartQuantity }: { item: MarketplaceItem;
             <MapPin className="h-3 w-3 text-[#d4af37]" />
             <span>{item.sellerAddress}</span>
           </div>
+          {item.distanceKm !== undefined && (
+            <div className="flex items-center gap-2 text-xs text-green-400">
+              <Navigation className="h-3 w-3" />
+              <span>{item.distanceKm} km away</span>
+            </div>
+          )}
         </div>
         
         {item.category === "non-climacteric" && (
@@ -512,6 +524,83 @@ function PaymentDialog({ isOpen, onClose, order }: { isOpen: boolean; onClose: (
   )
 }
 
+// Location Status Banner Component
+function LocationStatusBanner({ 
+  isTracking, 
+  location, 
+  locationError, 
+  isLoading,
+  listingsCount,
+  onStartTracking 
+}: { 
+  isTracking: boolean
+  location: { latitude: number; longitude: number } | null
+  locationError: string | null
+  isLoading: boolean
+  listingsCount: number
+  onStartTracking: () => void
+}) {
+  if (locationError) {
+    return (
+      <div className="mb-6 flex items-center gap-3 rounded-xl border border-red-500/30 bg-red-500/10 p-4">
+        <AlertCircle className="h-5 w-5 text-red-400" />
+        <div className="flex-1">
+          <p className="text-sm font-medium text-red-300">Location Access Required</p>
+          <p className="text-xs text-red-400/80">{locationError}</p>
+        </div>
+        <Button 
+          variant="outline" 
+          size="sm"
+          className="border-red-500/30 text-red-300 hover:bg-red-500/10"
+          onClick={onStartTracking}
+        >
+          <Locate className="mr-2 h-4 w-4" />
+          Retry
+        </Button>
+      </div>
+    )
+  }
+
+  if (!isTracking || !location) {
+    return (
+      <div className="mb-6 flex items-center gap-3 rounded-xl border border-[#d4af37]/30 bg-[#d4af37]/10 p-4">
+        <Navigation className="h-5 w-5 text-[#d4af37]" />
+        <div className="flex-1">
+          <p className="text-sm font-medium text-[#d4af37]">Enable Location for Nearby Listings</p>
+          <p className="text-xs text-[#d4af37]/80">See fresh produce from sellers near you</p>
+        </div>
+        <Button 
+          variant="outline" 
+          size="sm"
+          className="border-[#d4af37]/30 text-[#d4af37] hover:bg-[#d4af37]/10"
+          onClick={onStartTracking}
+        >
+          <Locate className="mr-2 h-4 w-4" />
+          Enable
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="mb-6 flex items-center gap-3 rounded-xl border border-green-500/30 bg-green-500/10 p-4">
+      {isLoading ? (
+        <Loader2 className="h-5 w-5 animate-spin text-green-400" />
+      ) : (
+        <Navigation className="h-5 w-5 text-green-400" />
+      )}
+      <div className="flex-1">
+        <p className="text-sm font-medium text-green-300">
+          {isLoading ? "Finding nearby sellers..." : `${listingsCount} seller${listingsCount !== 1 ? "s" : ""} found nearby`}
+        </p>
+        <p className="text-xs text-green-400/80">
+          Location: {location.latitude.toFixed(4)}, {location.longitude.toFixed(4)}
+        </p>
+      </div>
+    </div>
+  )
+}
+
 export function MarketplaceContent({ initialCategory }: MarketplaceContentProps) {
   const [selectedCategory, setSelectedCategory] = useState<"all" | "climacteric" | "non-climacteric">(
     initialCategory || "all"
@@ -519,60 +608,68 @@ export function MarketplaceContent({ initialCategory }: MarketplaceContentProps)
   const [cartItems, setCartItems] = useState<CartItem[]>([])
   const [cartCount, setCartCount] = useState(0)
   const [cartTotal, setCartTotal] = useState(0)
-  const [grocerListings, setGrocerListings] = useState<GrocerListing[]>([])
   const [isCartOpen, setIsCartOpen] = useState(false)
   const [purchaseOrder, setPurchaseOrder] = useState<PurchaseOrder | null>(null)
   const [isPaymentOpen, setIsPaymentOpen] = useState(false)
   
-  // Load grocer listings and cart on mount
+  // Use geofenced listings hook - fetches from Supabase based on user location
+  const {
+    marketplaceItems: geofencedItems,
+    isLoading: isGeofenceLoading,
+    error: geofenceError,
+    location,
+    locationError,
+    isLocationTracking,
+    startTracking,
+  } = useMarketplaceListings({
+    radiusKm: 2.5, // 2.5km radius for nearby sellers only
+    enableRealTimeTracking: true,
+    minMovementMeters: 100, // Only refetch if user moves 100m+
+  })
+  
+  // Load cart on mount
   useEffect(() => {
-    const loadData = () => {
-      setGrocerListings(getAvailableListings())
+    const loadCartData = () => {
       setCartItems(getCart())
       setCartCount(getCartCount())
       setCartTotal(getCartTotal())
     }
     
-    loadData()
+    loadCartData()
     
-    // Listen for cart and marketplace updates
+    // Listen for cart updates
     const handleCartUpdate = () => {
       setCartItems(getCart())
       setCartCount(getCartCount())
       setCartTotal(getCartTotal())
     }
     
-    const handleMarketplaceUpdate = () => {
-      setGrocerListings(getAvailableListings())
-    }
-    
     window.addEventListener("cartUpdated", handleCartUpdate)
-    window.addEventListener("marketplaceUpdated", handleMarketplaceUpdate)
-    window.addEventListener("storage", loadData)
+    window.addEventListener("storage", loadCartData)
     
     return () => {
       window.removeEventListener("cartUpdated", handleCartUpdate)
-      window.removeEventListener("marketplaceUpdated", handleMarketplaceUpdate)
-      window.removeEventListener("storage", loadData)
+      window.removeEventListener("storage", loadCartData)
     }
   }, [])
   
-  // Convert grocer listings to marketplace items
-  const grocerItems: MarketplaceItem[] = grocerListings.map(listing => ({
-    id: listing.id,
+  // Convert geofenced items to MarketplaceItem format (already done in the hook)
+  const grocerItems: MarketplaceItem[] = geofencedItems.map(item => ({
+    id: item.id,
     type: "listing" as const,
-    name: listing.fruitName,
-    category: listing.category,
-    image: listing.images[0] || "https://images.unsplash.com/photo-1619566636858-adf3ef46400b?w=400&h=400&fit=crop",
-    description: listing.verdict || `Fresh ${listing.fruitName} from local grocer`,
-    price: listing.price,
-    unit: "kg",
-    freshness: listing.freshness,
-    inStock: !listing.sold,
-    quantity: listing.quantity || 1,
-    sellerName: listing.grocerName,
-    sellerPhone: listing.grocerPhone,
-    sellerAddress: listing.grocerLocation,
+    name: item.name,
+    category: item.category as "climacteric" | "non-climacteric",
+    image: item.image,
+    description: item.description,
+    price: item.price,
+    unit: item.unit,
+    freshness: item.freshness,
+    inStock: item.inStock,
+    quantity: item.quantity,
+    sellerName: item.sellerName,
+    sellerPhone: item.sellerPhone,
+    sellerAddress: item.sellerAddress,
+    distanceKm: item.distanceKm, // Include distance for display
   }))
   
   // Convert default fruits to marketplace items
@@ -733,6 +830,16 @@ export function MarketplaceContent({ initialCategory }: MarketplaceContentProps)
             </div>
           </div>
         </div>
+        
+        {/* Location Status Banner */}
+        <LocationStatusBanner
+          isTracking={isLocationTracking}
+          location={location}
+          locationError={locationError}
+          isLoading={isGeofenceLoading}
+          listingsCount={geofencedItems.length}
+          onStartTracking={startTracking}
+        />
         
         {/* Category Filter Tabs */}
         <div className="mb-6">
